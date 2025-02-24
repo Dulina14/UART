@@ -19,8 +19,51 @@ module UART_TX_tb;
 
     // AXIS Driver
     initial begin
-        $dumpfile(""dump.vcd); $dumpvars;
+        $dumpfile("dump.vcd"); $dumpvars;
+        #20 rstn = 1; repeat(5) @(posedge clk) #1;
+
+        repeat (10) begin
+            repeat ($urandom_range(1,20)) @(posedge clk);
+            wait (s_ready);
+
+            @(posedge clk) #1 s_data = $urandom(); s_valid = 1;
+            @(posedge clk) #1 s_valid = 0;
+            wait (s_ready);
+        end
+        $finish();
     end
 
+    // Monitor
+    initial forever begin
+        rx_data <= 'x;
+        for (int iw = 0; iw < NUM_WORDS; iw = iw + 1) begin
+            wait (!tx);
+            // go to middle of start bit
+            repeat (CLOCKS_PER_PULSE / 2) @(posedge clk);
 
+            for (int ib = 0; ib < BITS_PER_WORD; ib = ib + 1) begin
+                repeat (CLOCKS_PER_PULSE) @(posedge clk);
+                rx_word[ib] = tx;
+            end
+            rx_data[iw] = rx_word;
+
+            for (int ib = 0; ib < PACKET_SIZE - BITS_PER_WORD - 1; ib = ib + 1) begin
+                repeat (CLOCKS_PER_PULSE) @(posedge clk);
+                assert ( tx == 1) else $error("Incorrect end bits/padding";)
+            end
+        end
+        assert (rx_data == s_data) $display("OK %b", rx_data);
+        else $error("Sent %b, got %b", s_data, rx_data);
+    end
+
+    // Count UART bits on waveform
+    int bits;
+    initial forever begin
+        bits = 0;
+        wait (!tx);
+        for (int n = 0; n < PACKET_SIZE; n++) begin
+            bits += 1;
+            repeat (CLOCKS_PER_PULSE) @(posedge clk);
+        end
+    end
 endmodule
